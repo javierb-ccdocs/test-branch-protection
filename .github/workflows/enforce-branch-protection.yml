@@ -30,7 +30,7 @@ jobs:
               });
               
               prsToCheck = prs.filter(pr => 
-                pr.base.ref === 'main' || pr.base.ref === 'staging' || pr.base.ref === 'develop'
+                pr.base.ref === 'main' || pr.base.ref === 'staging' || pr.base.ref === 'develop' || pr.base.ref === 'master'
               );
             }
             
