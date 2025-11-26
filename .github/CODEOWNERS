@@ -1,0 +1,36 @@
+# CODEOWNERS file for branch protection workaround
+# This file requires review from code owners before PRs can be merged
+# 
+# Format: <file-pattern> <@username or @org/team-name>
+#
+# All files require at least one review from a code owner
+# To add more reviewers, just add their GitHub usernames after @CCDocs-Bolaji
+# Example: * @CCDocs-Bolaji @username2 @username3
+* @CCDocs-Bolaji
+
+# Frontend files - require frontend team review
+# Add frontend team members here if needed in the future
+*.tsx @CCDocs-Bolaji
+*.ts @CCDocs-Bolaji
+*.jsx @CCDocs-Bolaji
+*.js @CCDocs-Bolaji
+*.css @CCDocs-Bolaji
+*.scss @CCDocs-Bolaji
+
+# Configuration files - require team lead review
+# Add other team leads here if needed in the future
+.github/ @CCDocs-Bolaji
+package.json @CCDocs-Bolaji
+package-lock.json @CCDocs-Bolaji
+tsconfig.json @CCDocs-Bolaji
+next.config.js @CCDocs-Bolaji
+
+# Documentation
+*.md @CCDocs-Bolaji
+docs/ @CCDocs-Bolaji
+
+# To add more code owners in the future:
+# 1. Add their GitHub username to the relevant lines above
+# 2. Example: * @CCDocs-Bolaji @username2 @username3
+# 3. Any one of the listed code owners can approve the PR
+

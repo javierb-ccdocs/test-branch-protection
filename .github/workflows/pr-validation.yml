@@ -1,0 +1,87 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR and block merge if failed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const validationErrors = [];
+            
+            // Skip validation for draft PRs
+            if (pr.draft) {
+              console.log('ℹ️ Draft PR - skipping validations');
+              return;
+            }
+            
+            // Check PR description
+            if (!pr.body || pr.body.trim().length < 20) {
+              validationErrors.push('PR must have a description (at least 20 characters)');
+            }
+            
+            // Validate branch naming
+            const branchName = pr.head.ref;
+            const validPrefixes = ['feature/', 'fix/', 'hotfix/', 'chore/'];
+            const isValid = validPrefixes.some(prefix => branchName.startsWith(prefix)) || 
+                           branchName === 'develop' || 
+                           branchName === 'main';
+            
+            if (!isValid && !branchName.match(/^(feature|fix|hotfix|chore)\/[a-z0-9-]+$/)) {
+              validationErrors.push(`Branch name "${branchName}" does not follow naming convention. Use: feature/, fix/, hotfix/, or chore/`);
+            }
+            
+            // If validation failed, close the PR
+            if (validationErrors.length > 0) {
+              const { data: currentPr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              
+              if (currentPr.state === 'open') {
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  state: 'closed'
+                });
+              }
+              
+              const errorList = validationErrors.map(e => `- ❌ ${e}`).join('\n');
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `🚫 **PR CLOSED - Validation Failed**\n\nThis PR has been automatically closed because:\n\n${errorList}\n\n**Fix the issues and push new commits to reopen this PR.**`
+              });
+              
+              core.setFailed(`PR validation failed: ${validationErrors.join('; ')}`);
+            } else {
+              console.log('✅ PR validation checks passed');
+              
+              // Check for large files (warning only, doesn't close PR)
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              
+              const largeFiles = files.filter(file => file.additions > 1000 || file.changes > 2000);
+              if (largeFiles.length > 0) {
+                const fileList = largeFiles.map(f => `- ${f.filename} (+${f.additions} lines)`).join('\n');
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `⚠️ **Large Changes Detected:** Consider splitting this PR into smaller changes:\n${fileList}`
+                });
+              }
+            }
