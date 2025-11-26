@@ -1,0 +1,136 @@
+name: Enforce Branch Protection
+
+# Run when PRs are created or updated
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  enforce-protection:
+    name: Enforce Branch Protection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Check PRs and close if checks fail
+        uses: actions/github-script@v6
+        with:
+          script: |
+            let prsToCheck = [];
+            
+            // Check the PR that triggered this workflow
+            if (context.eventName === 'pull_request') {
+              prsToCheck = [context.payload.pull_request];
+            } else {
+              // Manual trigger - check all open PRs targeting main/staging/develop
+              const { data: prs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                per_page: 100
+              });
+              
+              prsToCheck = prs.filter(pr => 
+                pr.base.ref === 'main' || pr.base.ref === 'staging' || pr.base.ref === 'develop' || pr.base.ref === 'master'
+              );
+            }
+            
+            for (const pr of prsToCheck) {
+              // Skip draft PRs
+              if (pr.draft) {
+                console.log(`Skipping draft PR #${pr.number}`);
+                continue;
+              }
+              
+              // Get latest commit status
+              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+              });
+              
+              // Required checks
+              const requiredChecks = [
+                'CodeRabbit',
+                'deploy',
+                'Lint and Build',
+                'Docker Build Test',
+                'Required Checks / lint',
+                'Required Checks / test',
+                'Required Checks / build',
+                'PR Validation / validate-pr'
+              ];
+              
+              // Check which checks have passed/failed
+              const checkResults = {};
+              requiredChecks.forEach(check => {
+                const status = statuses.find(s => s.context === check);
+                if (status) {
+                  checkResults[check] = status.state;
+                } else {
+                  checkResults[check] = 'pending';
+                }
+              });
+              
+              const failedChecks = Object.entries(checkResults)
+                .filter(([check, state]) => state === 'failure' || state === 'error')
+                .map(([check]) => check);
+              
+              const pendingChecks = Object.entries(checkResults)
+                .filter(([check, state]) => state === 'pending')
+                .map(([check]) => check);
+              
+              // If checks failed, close the PR
+              if (failedChecks.length > 0) {
+                const { data: currentPr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                });
+                
+                if (currentPr.state === 'open') {
+                  await github.rest.pulls.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: pr.number,
+                    state: 'closed'
+                  });
+                  
+                  const failedList = failedChecks.map(c => `- ❌ ${c}`).join('\n');
+                  const pendingList = pendingChecks.length > 0 
+                    ? '\n\n**Pending checks:**\n' + pendingChecks.map(c => `- ⏳ ${c}`).join('\n')
+                    : '';
+                  
+                  await github.rest.issues.createComment({
+                    issue_number: pr.number,
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    body: `🚫 **PR CLOSED - Checks Failed**\n\nThis PR has been automatically closed because the following required checks failed:\n\n${failedList}${pendingList}\n\n**Fix the issues and push new commits to reopen this PR.**`
+                  });
+                  
+                  console.log(`Closed PR #${pr.number} - checks failed`);
+                }
+              } else if (failedChecks.length === 0 && pendingChecks.length === 0) {
+                // All checks passed, ensure PR is open
+                const { data: currentPr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                });
+                
+                if (currentPr.state === 'closed' && currentPr.merged === false) {
+                  await github.rest.pulls.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: pr.number,
+                    state: 'open'
+                  });
+                  
+                  console.log(`Reopened PR #${pr.number} - all checks passed`);
+                }
+              }
+            }
+
