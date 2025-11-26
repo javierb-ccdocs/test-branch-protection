@@ -56,6 +56,12 @@ jobs:
               return;
             }
             
+            // Skip if PR Validation already closed the PR (to avoid duplicate comments)
+            if (pr.state === 'closed') {
+              console.log('ℹ️ PR already closed - skipping to avoid duplicate comments');
+              return;
+            }
+            
             // Get all status checks for this commit
             const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
               owner: context.repo.owner,

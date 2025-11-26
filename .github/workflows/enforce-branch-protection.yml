@@ -41,6 +41,19 @@ jobs:
                 continue;
               }
               
+              // Check if PR is already closed (likely by PR Validation)
+              const { data: currentPr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+              });
+              
+              // Skip if already closed to avoid duplicate comments
+              if (currentPr.state === 'closed') {
+                console.log(`PR #${pr.number} already closed - skipping to avoid duplicate comments`);
+                continue;
+              }
+              
               // Get latest commit status
               const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
                 owner: context.repo.owner,
@@ -87,13 +100,14 @@ jobs:
               
               // All checks completed
               if (failedChecks.length > 0) {
+                // Double-check PR is still open (might have been closed by PR Validation)
                 const { data: currentPr } = await github.rest.pulls.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: pr.number,
                 });
                 
-                // Only close and comment if PR is still open and not already handled by other workflows
+                // Only close and comment if PR is still open (not already closed by PR Validation)
                 if (currentPr.state === 'open') {
                   await github.rest.pulls.update({
                     owner: context.repo.owner,

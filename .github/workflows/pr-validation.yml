@@ -8,6 +8,10 @@ on:
 jobs:
   validate-pr:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Validate PR and block merge if failed
         uses: actions/github-script@v6
