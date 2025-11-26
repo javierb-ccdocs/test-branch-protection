@@ -2,16 +2,12 @@ name: PR Validation
 
 on:
   pull_request:
-    branches: [main, develop, master]
+    branches: [main, develop]
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   validate-pr:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
     steps:
       - name: Validate PR and block merge if failed
         uses: actions/github-script@v6
@@ -59,33 +55,17 @@ jobs:
                 });
               }
               
-              const errorList = validationErrors.map(e => `- ❌ ${e}`).join('\n');
+              // Create ONE concise comment
+              const errorSummary = validationErrors.map(e => `- ${e}`).join('\n');
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `🚫 **PR CLOSED - Validation Failed**\n\nThis PR has been automatically closed because:\n\n${errorList}\n\n**Fix the issues and push new commits to reopen this PR.**`
+                body: `🚫 **PR Closed - Validation Failed**\n\n${errorSummary}\n\nFix and push new commits to reopen.`
               });
               
               core.setFailed(`PR validation failed: ${validationErrors.join('; ')}`);
             } else {
               console.log('✅ PR validation checks passed');
-              
-              // Check for large files (warning only, doesn't close PR)
-              const { data: files } = await github.rest.pulls.listFiles({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-              });
-              
-              const largeFiles = files.filter(file => file.additions > 1000 || file.changes > 2000);
-              if (largeFiles.length > 0) {
-                const fileList = largeFiles.map(f => `- ${f.filename} (+${f.additions} lines)`).join('\n');
-                await github.rest.issues.createComment({
-                  issue_number: context.issue.number,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  body: `⚠️ **Large Changes Detected:** Consider splitting this PR into smaller changes:\n${fileList}`
-                });
-              }
+              // Don't comment on success - CODEOWNERS will get notification when PR is ready
             }

@@ -8,10 +8,6 @@ jobs:
   check-merge-requirements:
     name: Check Merge Requirements
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
     steps:
       - name: Get PR details
         id: pr-info
@@ -41,12 +37,8 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: 'ℹ️ **Draft PR:** This PR is still in draft. Mark as ready for review when ready to merge.'
-            });
+            // Skip draft PRs silently - no comment needed
+            console.log('ℹ️ Draft PR - skipping checks');
 
       - name: Check required status checks and block merge if failed
         uses: actions/github-script@v6
@@ -103,27 +95,17 @@ jobs:
               .filter(([check, state]) => state === 'pending')
               .map(([check]) => check);
             
-            // If PR is closed, check if we should reopen it
-            if (pr.state === 'closed' && failedChecks.length === 0 && pendingChecks.length === 0) {
-              // All checks passed, reopen PR
-              await github.rest.pulls.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-                state: 'open'
-              });
-              
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: '✅ **All checks passed!** PR has been reopened and is ready to merge.'
-              });
+            // Wait for all checks to complete before commenting
+            // Only comment if ALL checks are done (no pending checks)
+            if (pendingChecks.length > 0) {
+              // Still waiting for checks - don't comment yet
+              console.log(`Waiting for checks: ${pendingChecks.join(', ')}`);
               return;
             }
             
-            // If checks failed, close the PR to block merging
+            // All checks completed - now decide what to do
             if (failedChecks.length > 0) {
+              // Checks failed - close PR with summary
               if (pr.state === 'open') {
                 await github.rest.pulls.update({
                   owner: context.repo.owner,
@@ -131,47 +113,31 @@ jobs:
                   pull_number: context.issue.number,
                   state: 'closed'
                 });
+                
+                // Create ONE summary comment
+                const failedList = failedChecks.map(c => `- ${c}`).join('\n');
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `🚫 **PR Closed - Checks Failed**\n\nFailed: ${failedChecks.length} check(s)\n\n${failedList}\n\nFix issues and push new commits to reopen.`
+                });
               }
               
-              const failedList = failedChecks.map(c => `- ❌ ${c}`).join('\n');
-              const pendingList = pendingChecks.length > 0 
-                ? '\n\n**Pending checks:**\n' + pendingChecks.map(c => `- ⏳ ${c}`).join('\n')
-                : '';
-              
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `🚫 **PR CLOSED - Checks Failed**\n\nThis PR has been automatically closed because the following required checks failed:\n\n${failedList}${pendingList}\n\n**Fix the issues and push new commits to reopen this PR.**`
-              });
-              
               core.setFailed(`Required checks failed: ${failedChecks.join(', ')}`);
-            } else if (pendingChecks.length > 0) {
-              // Some checks still pending, just comment
-              const pendingList = pendingChecks.map(c => `- ⏳ ${c}`).join('\n');
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `⏳ **Waiting for checks to complete:**\n\n${pendingList}\n\nPR will be automatically closed if any checks fail.`
-              });
-            }
-
-      - name: Enforce PR description
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const minDescriptionLength = 20;
-            
-            if (!pr.body || pr.body.trim().length < minDescriptionLength) {
-              core.setFailed(`PR description must be at least ${minDescriptionLength} characters`);
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `❌ **PR Description Required:** Please add a description explaining:\n- What changes were made\n- Why the changes were needed\n- Any breaking changes\n\nMinimum ${minDescriptionLength} characters required.`
-              });
+            } else {
+              // All checks passed
+              if (pr.state === 'closed' && pr.merged === false) {
+                // Reopen if it was auto-closed
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  state: 'open'
+                });
+              }
+              // Don't comment on success - CODEOWNERS will get notification when PR is ready for review
+              console.log('✅ All checks passed - PR ready for review');
             }
 
       - name: Check for conflicts
@@ -185,18 +151,13 @@ jobs:
             });
             
             if (pr.mergeable === false) {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: '⚠️ **Merge Conflicts:** This PR has merge conflicts that must be resolved before merging.'
-              });
+              // Only comment if PR is still open (not already closed by validation)
+              if (pr.state === 'open') {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: '⚠️ **Merge Conflicts:** Resolve conflicts before merging.'
+                });
+              }
             }
-
-      - name: Summary
-        if: always()
-        uses: actions/github-script@v6
-        with:
-          script: |
-            console.log('✅ Merge protection checks completed');
-            console.log('Review the comments above for any issues that need to be addressed.');

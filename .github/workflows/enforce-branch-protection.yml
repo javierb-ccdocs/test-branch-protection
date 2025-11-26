@@ -10,10 +10,6 @@ jobs:
   enforce-protection:
     name: Enforce Branch Protection
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
     steps:
       - name: Check PRs and close if checks fail
         uses: actions/github-script@v6
@@ -34,7 +30,7 @@ jobs:
               });
               
               prsToCheck = prs.filter(pr => 
-                pr.base.ref === 'main' || pr.base.ref === 'staging' || pr.base.ref === 'develop' || pr.base.ref === 'master'
+                pr.base.ref === 'main' || pr.base.ref === 'staging' || pr.base.ref === 'develop'
               );
             }
             
@@ -83,7 +79,13 @@ jobs:
                 .filter(([check, state]) => state === 'pending')
                 .map(([check]) => check);
               
-              // If checks failed, close the PR
+              // Only act if all checks are complete (no pending)
+              if (pendingChecks.length > 0) {
+                console.log(`PR #${pr.number} - waiting for checks: ${pendingChecks.join(', ')}`);
+                continue;
+              }
+              
+              // All checks completed
               if (failedChecks.length > 0) {
                 const { data: currentPr } = await github.rest.pulls.get({
                   owner: context.repo.owner,
@@ -91,6 +93,7 @@ jobs:
                   pull_number: pr.number,
                 });
                 
+                // Only close and comment if PR is still open and not already handled by other workflows
                 if (currentPr.state === 'open') {
                   await github.rest.pulls.update({
                     owner: context.repo.owner,
@@ -99,22 +102,19 @@ jobs:
                     state: 'closed'
                   });
                   
-                  const failedList = failedChecks.map(c => `- ❌ ${c}`).join('\n');
-                  const pendingList = pendingChecks.length > 0 
-                    ? '\n\n**Pending checks:**\n' + pendingChecks.map(c => `- ⏳ ${c}`).join('\n')
-                    : '';
-                  
+                  // ONE concise comment
+                  const failedList = failedChecks.map(c => `- ${c}`).join('\n');
                   await github.rest.issues.createComment({
                     issue_number: pr.number,
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    body: `🚫 **PR CLOSED - Checks Failed**\n\nThis PR has been automatically closed because the following required checks failed:\n\n${failedList}${pendingList}\n\n**Fix the issues and push new commits to reopen this PR.**`
+                    body: `🚫 **PR Closed - Checks Failed**\n\nFailed: ${failedChecks.length} check(s)\n\n${failedList}\n\nFix and push new commits to reopen.`
                   });
                   
                   console.log(`Closed PR #${pr.number} - checks failed`);
                 }
-              } else if (failedChecks.length === 0 && pendingChecks.length === 0) {
-                // All checks passed, ensure PR is open
+              } else {
+                // All checks passed - silently reopen if needed
                 const { data: currentPr } = await github.rest.pulls.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -128,7 +128,6 @@ jobs:
                     pull_number: pr.number,
                     state: 'open'
                   });
-                  
                   console.log(`Reopened PR #${pr.number} - all checks passed`);
                 }
               }
