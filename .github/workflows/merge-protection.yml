@@ -20,6 +20,13 @@ jobs:
               pull_number: context.issue.number,
             });
             
+            // Exit early if PR is already closed (likely by PR Validation)
+            // This prevents workflow failure emails
+            if (pr.state === 'closed') {
+              console.log('ℹ️ PR already closed - exiting early to avoid duplicate emails');
+              process.exit(0);
+            }
+            
             core.setOutput('draft', pr.draft);
             core.setOutput('mergeable', pr.mergeable);
             core.setOutput('mergeable_state', pr.mergeable_state);

@@ -15,6 +15,21 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            // If triggered by PR event, check if PR is already closed first
+            if (context.eventName === 'pull_request') {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              
+              // Exit early if already closed (prevents failure emails)
+              if (pr.state === 'closed') {
+                console.log('ℹ️ PR already closed - exiting early to avoid duplicate emails');
+                process.exit(0);
+              }
+            }
+            
             let prsToCheck = [];
             
             // Check the PR that triggered this workflow

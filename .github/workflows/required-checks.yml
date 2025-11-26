@@ -12,6 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
+      - name: Check if PR is closed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            
+            // Exit early if PR is already closed (prevents failure emails)
+            if (pr.state === 'closed') {
+              console.log('ℹ️ PR already closed - skipping checks to avoid duplicate emails');
+              process.exit(0);
+            }
+      
       - name: Checkout code
         uses: actions/checkout@v4
       
@@ -33,6 +49,21 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
+      - name: Check if PR is closed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            
+            if (pr.state === 'closed') {
+              console.log('ℹ️ PR already closed - skipping checks');
+              process.exit(0);
+            }
+      
       - name: Checkout code
         uses: actions/checkout@v4
       
@@ -54,6 +85,21 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
+      - name: Check if PR is closed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            
+            if (pr.state === 'closed') {
+              console.log('ℹ️ PR already closed - skipping checks');
+              process.exit(0);
+            }
+      
       - name: Checkout code
         uses: actions/checkout@v4
       
