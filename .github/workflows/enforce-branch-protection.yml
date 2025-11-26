@@ -10,6 +10,10 @@ jobs:
   enforce-protection:
     name: Enforce Branch Protection
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Check PRs and close if checks fail
         uses: actions/github-script@v6

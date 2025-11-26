@@ -8,6 +8,10 @@ jobs:
   check-merge-requirements:
     name: Check Merge Requirements
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Get PR details
         id: pr-info
